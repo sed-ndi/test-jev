@@ -457,8 +457,10 @@ footer code {
     </script>
     <script>
 // ============================================================================
-// TypeSafe PoC — Mini-app: Re-ranking de Escolas
+// TypeSafe PoC — Mini-app: Re-ranking de Escolas (VERSÃO ESTÁTICA)
 // Frontend JS puro (sem framework, sem build).
+// Lê SCHOOLS de window.SCHOOLS_DATA (inline no HTML).
+// Lê Worker URL do campo #workerUrl (salvo em localStorage).
 // ============================================================================
 
 const $ = sel => document.querySelector(sel);
@@ -484,9 +486,9 @@ let SCHOOLS = [];
 // ---------------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------------
-async function init() {
+function init() {
   // Inline schools data (no fetch needed)
-  SCHOOLS = window.SCHOOLS_DATA;
+  SCHOOLS = window.SCHOOLS_DATA || [];
   $('#schoolsCount').textContent = SCHOOLS.length;
   renderSchoolsGrid(SCHOOLS);
   $('#runBtn').disabled = false;
@@ -509,6 +511,24 @@ async function init() {
     }
   });
   $('#testWorkerBtn').addEventListener('click', checkWorkerHealth);
+
+  // Chips de exemplo
+  $$('.chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      $('#queryInput').value = chip.dataset.q;
+      $('#queryInput').focus();
+    });
+  });
+
+  // Botão principal
+  $('#runBtn').addEventListener('click', runRerank);
+  // Enter no textarea (Ctrl+Enter)
+  $('#queryInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      runRerank();
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -543,7 +563,7 @@ function renderSchoolsGrid(schools) {
 }
 
 // ---------------------------------------------------------------------------
-// Chamar /api/rerank
+// Chamar /api/rerank no Worker
 // ---------------------------------------------------------------------------
 async function runRerank() {
   const query = $('#queryInput').value.trim();
@@ -596,7 +616,7 @@ async function runRerank() {
     }
 
     renderResult(data);
-    setStatus('ok', 'OK · ' + data.elapsed_ms + 'ms · in=' + data.usage.input_tokens + 'tok out=' + data.usage.output_tokens + 'tok');
+    setStatus('ok', `OK · ${data.elapsed_ms}ms · in=${data.usage.input_tokens}tok out=${data.usage.output_tokens}tok`);
   } catch (e) {
     showError({ error: e.message, stack: e.stack });
     setStatus('err', 'Falha de rede: ' + e.message);
@@ -607,6 +627,9 @@ async function runRerank() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Health check do Worker
+// ---------------------------------------------------------------------------
 async function checkWorkerHealth() {
   const url = ($('#workerUrl').value || '').trim();
   if (!url) {
@@ -630,8 +653,6 @@ async function checkWorkerHealth() {
     setStatus('err', 'Não foi possível alcançar o Worker: ' + e.message);
   }
 }
-}
-
 
 // ---------------------------------------------------------------------------
 // Renderizar resultado
