@@ -1,0 +1,760 @@
+<!-- TypeSafe PoC — Re-ranking de Escolas (STATIC SINGLE-FILE for GitHub Pages) -->
+<!-- Deploy: push this file to your github.io repo → open https://USER.github.io/REPO/ -->
+<!-- Required: deploy the Cloudflare Worker (worker/proxy.js) first and paste its URL below -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TypeSafe PoC · Re-ranking de Escolas</title>
+  <style>
+:root {
+  --bg: #f6f8fb;
+  --card: #ffffff;
+  --ink: #1c2733;
+  --muted: #66758a;
+  --line: #e3e8ef;
+  --brand: #2454ff;
+  --brand-ink: #0e2e91;
+  --brand-soft: #e8edff;
+  --good: #1aa06d;
+  --warn: #e0a715;
+  --bad: #e0483d;
+  --shadow: 0 1px 2px rgba(20, 30, 50, .06), 0 6px 20px rgba(20, 30, 50, .05);
+  --radius: 14px;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Segoe UI", Inter, system-ui, -apple-system, Roboto, Arial, sans-serif;
+  font-size: 14.5px;
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+/* ---------- Topbar ---------- */
+.topbar {
+  background: linear-gradient(135deg, #0e2e91 0%, #2454ff 100%);
+  color: #fff;
+  padding: 22px 32px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  justify-content: space-between;
+}
+.topbar .brand { display: flex; align-items: center; gap: 14px; }
+.topbar .logo {
+  font-size: 30px;
+  background: rgba(255, 255, 255, 0.15);
+  width: 52px; height: 52px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 14px;
+}
+.topbar h1 { margin: 0 0 4px; font-size: 19px; font-weight: 800; }
+.topbar .sub { margin: 0; color: rgba(255, 255, 255, 0.78); font-size: 12.5px; }
+
+.status {
+  background: rgba(255, 255, 255, 0.12);
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.status .dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #1aa06d;
+  box-shadow: 0 0 0 4px rgba(26, 160, 109, 0.25);
+}
+.status .dot.err { background: var(--bad); box-shadow: 0 0 0 4px rgba(224, 72, 61, 0.25); }
+.status .dot.warn { background: var(--warn); box-shadow: 0 0 0 4px rgba(224, 167, 21, 0.25); }
+
+/* ---------- Main ---------- */
+main { max-width: 1240px; margin: 0 auto; padding: 24px 32px 80px; }
+
+.card {
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 22px 26px;
+  margin-bottom: 18px;
+}
+.card h2 { margin: 0 0 8px; font-size: 17px; }
+.card .hint { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
+
+/* ---------- Query box ---------- */
+.query-row {
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+  margin-bottom: 14px;
+}
+.query-row textarea {
+  flex: 1;
+  border: 1.5px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 14.5px;
+  font-family: inherit;
+  resize: vertical;
+  background: #fff;
+  color: var(--ink);
+  min-height: 60px;
+}
+.query-row textarea:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
+
+.btn {
+  border: none;
+  border-radius: 10px;
+  padding: 12px 22px;
+  font-weight: 700;
+  font-size: 14.5px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: inherit;
+  transition: background .15s, transform .05s;
+}
+.btn.primary { background: var(--brand); color: #fff; }
+.btn.primary:hover:not(:disabled) { background: var(--brand-ink); }
+.btn.primary:active:not(:disabled) { transform: translateY(1px); }
+.btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.spinner {
+  width: 14px; height: 14px;
+  border: 2.5px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  display: inline-block;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.examples {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+}
+.examples-label {
+  font-size: 12px; color: var(--muted); font-weight: 600;
+  margin-right: 6px;
+}
+.chip {
+  background: var(--brand-soft);
+  color: var(--brand-ink);
+  border: none;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background .15s;
+}
+.chip:hover { background: #d8e0ff; }
+
+/* ---------- Schools grid ---------- */
+.schools-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+}
+.school-card {
+  background: #fbfcfe;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 12.5px;
+  transition: all .2s;
+}
+.school-card h4 {
+  margin: 0 0 4px; font-size: 13.5px; font-weight: 700;
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 6px;
+}
+.school-card .reg { font-size: 10.5px; color: var(--muted); font-weight: 600; }
+.school-card .indicators {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 3px 12px;
+  margin-top: 8px;
+  font-size: 11.5px;
+}
+.school-card .ind {
+  display: flex; justify-content: space-between;
+  border-bottom: 1px dotted var(--line);
+  padding: 1px 0;
+}
+.school-card .ind .label { color: var(--muted); }
+.school-card .ind .val { font-weight: 600; color: var(--ink); }
+
+/* ---------- Result ---------- */
+.result-meta {
+  background: #f8fafc;
+  border-left: 3px solid var(--brand);
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  font-size: 13px;
+  color: var(--muted);
+  border-radius: 6px;
+}
+.result-meta b { color: var(--ink); }
+
+.aux-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 22px;
+}
+@media (max-width: 720px) { .aux-grid { grid-template-columns: 1fr; } }
+
+.aux-card {
+  background: #fbfcfe;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+.aux-card .aux-label {
+  font-size: 11px; color: var(--muted); text-transform: uppercase;
+  letter-spacing: 0.04em; font-weight: 700; margin-bottom: 6px;
+}
+.aux-card .aux-value {
+  font-size: 22px; font-weight: 800;
+}
+.aux-card .aux-desc {
+  font-size: 12px; color: var(--muted); margin-top: 4px;
+}
+.aux-card .aux-bar {
+  height: 8px; background: #eef1f6; border-radius: 4px; overflow: hidden;
+  margin-top: 8px;
+}
+.aux-card .aux-bar-fill {
+  height: 100%; transition: width 0.4s ease-out;
+}
+
+.aux-card.noul .aux-value { color: var(--brand); }
+.aux-card.noul .aux-bar-fill { background: var(--brand); }
+.aux-card.score .aux-value { color: #0e2e91; }
+.aux-card.score .aux-bar-fill { background: linear-gradient(90deg, #badrfc, #2454ff); }
+
+/* ---------- Ranking ---------- */
+.ranking { display: flex; flex-direction: column; gap: 6px; }
+.rank-row {
+  display: grid;
+  grid-template-columns: 32px 1fr 100px;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  background: #fbfcfe;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  transition: all .2s;
+}
+.rank-row.top-1 { background: linear-gradient(90deg, #fff8e0, #fbfcfe); border-color: #e0a715; }
+.rank-row.top-2 { background: #fbfcfe; }
+.rank-row.top-3 { background: #fbfcfe; }
+
+.rank-pos {
+  width: 32px; height: 32px;
+  background: var(--brand);
+  color: #fff;
+  border-radius: 8px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-weight: 800;
+  font-size: 14px;
+}
+.rank-row.top-1 .rank-pos { background: #e0a715; }
+.rank-row.top-2 .rank-pos { background: #8b5cf6; }
+.rank-row.top-3 .rank-pos { background: #0891b2; }
+
+.rank-info .name { font-weight: 700; font-size: 14px; }
+.rank-info .meta { font-size: 11.5px; color: var(--muted); }
+
+.rank-prob {
+  text-align: right;
+  font-weight: 800;
+  font-size: 15px;
+  color: var(--brand-ink);
+}
+.rank-prob .pct { display: block; }
+.rank-prob .bar {
+  height: 5px;
+  background: #eef1f6;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+.rank-prob .bar-fill {
+  height: 100%;
+  background: var(--brand);
+  transition: width 0.5s ease-out;
+}
+
+/* ---------- Raw response ---------- */
+.raw { margin-top: 24px; }
+.raw summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 8px 0;
+}
+.raw pre {
+  background: #0e1e2f;
+  color: #d8e2ef;
+  padding: 14px 16px;
+  border-radius: 8px;
+  overflow-x: auto;
+  font-size: 11.5px;
+  font-family: "JetBrains Mono", Menlo, Consolas, monospace;
+  line-height: 1.45;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+/* ---------- Error ---------- */
+.error-card { border: 2px solid var(--bad); }
+.error-card pre {
+  background: #fdecea;
+  color: #8a2318;
+  padding: 12px;
+  border-radius: 8px;
+  overflow: auto;
+  font-size: 12px;
+  font-family: "JetBrains Mono", Menlo, Consolas, monospace;
+}
+
+/* ---------- Footer ---------- */
+footer {
+  text-align: center;
+  padding: 20px 0 40px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+footer a { color: var(--brand); }
+footer code {
+  background: var(--brand-soft);
+  color: var(--brand-ink);
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 11.5px;
+}
+
+    /* Config card */
+    .config-card { border: 2px dashed var(--brand); background: #f0f4ff; }
+    .worker-row { display: flex; gap: 8px; }
+    .worker-row input { flex: 1; border: 1.5px solid var(--line); border-radius: 10px; padding: 11px 13px; font-size: 14.5px; font-family: inherit; background: #fff; color: var(--ink); }
+    .worker-row input:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
+    .btn.secondary { background: #eef1f6; color: var(--ink); }
+    .btn.secondary:hover { background: #e2e6ee; }
+    </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">⚡</span>
+      <div>
+        <h1>TypeSafe PoC · Re-ranking de Escolas</h1>
+        <p class="sub">Validação do conceito antes de integrar na Dashboard de Clima Escolar — Joinville</p>
+      </div>
+    </div>
+    <div class="status" id="status">
+      <span class="dot ok"></span> Servidor conectado
+    </div>
+  </header>
+
+  <main>
+<!-- Configuration banner -->
+<section class="card config-card">
+  <h2>⚙️ Configuração do Worker</h2>
+  <p class="hint">
+    Cole aqui a URL do seu Cloudflare Worker (depois de fazer o deploy). Ela fica salva no localStorage do navegador.
+    Botão "Testar conexão" faz um health-check no endpoint <code>/health</code> do Worker.
+  </p>
+  <div class="worker-row">
+    <input type="url" id="workerUrl" placeholder="https://typesafe-poc.seu-usuario.workers.dev" />
+    <button class="btn secondary" id="testWorkerBtn">Testar conexão</button>
+  </div>
+</section>
+
+    <!-- ============ Etapa 1: Definir a consulta ============ -->
+    <section class="card">
+      <h2>1. Defina a consulta em linguagem natural</h2>
+      <p class="hint">
+        Descreva o perfil de escola que você quer encontrar. A TypeSafe vai avaliar todas as escolas
+        em paralelo e retornar uma distribuição de probabilidades — o ranking é derivado dessa
+        distribuição.
+      </p>
+
+      <div class="query-row">
+        <textarea id="queryInput" rows="3" placeholder="Ex.: Escolas com sinais de crise climática e alta ideia de abandono escolar"></textarea>
+        <button class="btn primary" id="runBtn" disabled>
+          <span class="btn-label">Rankear</span>
+          <span class="spinner" style="display:none"></span>
+        </button>
+      </div>
+
+      <div class="examples">
+        <span class="examples-label">Sugestões:</span>
+        <button class="chip" data-q="Escolas com sinais de crise no clima escolar (bullying elevado, baixa segurança) e risco de abandono iminente">Crise climática + risco abandono</button>
+        <button class="chip" data-q="Escolas onde a saúde mental dos estudantes está mais comprometida (alta ansiedade, ideação suicida elevada)">Saúde mental comprometida</button>
+        <button class="chip" data-q="Escolas com bom clima escolar, bom engajamento estudantil e alta proficiência (IDEB e SAEB)">Escolas exemplares</button>
+        <button class="chip" data-q="Escolas onde o suporte familiar é fraco e os estudantes se sentem pouco pertencentes">Baixo pertencimento + família ausente</button>
+        <button class="chip" data-q="Escolas prioritárias para receber APOIAs adicionais (combinação de baixo IDEB, baixa frequência, alto risco de abandono)">Prioridade para APOIAs</button>
+      </div>
+    </section>
+
+    <!-- ============ Etapa 2: Escolas carregadas ============ -->
+    <section class="card">
+      <h2>2. Escolas na consulta (<span id="schoolsCount">0</span>)</h2>
+      <p class="hint">
+        Dataset sintético de 12 escolas com indicadores alinhados ao dashboard:
+        planilha externa (Ideb/SAEB/frequência/APOIAs/risco abandono) + clima escolar (Delaware 0–100)
+        + saúde mental (PeNSE, prevalências %).
+      </p>
+      <div class="schools-grid" id="schoolsGrid"></div>
+    </section>
+
+    <!-- ============ Etapa 3: Resultado ============ -->
+    <section class="card" id="resultSection" style="display:none">
+      <h2>3. Resultado do Re-ranking</h2>
+
+      <div class="result-meta" id="resultMeta"></div>
+
+      <!-- Cards auxiliares: caso crítico + confiança + gravidade -->
+      <div class="aux-grid" id="auxGrid"></div>
+
+      <!-- Ranking -->
+      <h3>Ranking por probabilidade</h3>
+      <div class="ranking" id="rankingList"></div>
+
+      <!-- Resposta bruta -->
+      <details class="raw">
+        <summary>Ver resposta completa da TypeSafe (JSON)</summary>
+        <pre id="rawResponse"></pre>
+      </details>
+    </section>
+
+    <!-- ============ Erro ============ -->
+    <section class="card error-card" id="errorSection" style="display:none">
+      <h2>Erro</h2>
+      <pre id="errorBody"></pre>
+    </section>
+  </main>
+
+  <footer>
+    <p>
+      PoC TypeSafe · Jev <code id="modelLabel">jev-latest</code> ·
+      <a href="https://docs.typesafe.ai" target="_blank">docs.typesafe.ai</a> ·
+      <span id="elapsedLabel"></span>
+    </p>
+  </footer>
+
+  <script>
+    // Inline schools data
+    window.SCHOOLS_DATA = [{"id":"EM01","nome":"E.M. Castro Alves","regiao":"Norte","qtd_alunos":320,"indicadores_externos":{"ideb_2025":4.2,"saeb_portugues_2025":218.4,"saeb_matematica_2025":222.1,"freq_media_2026":89.2,"pct_freq_baixa_2026":11.8,"apoias_por_100":3.2,"risco_abandono_por_100":1.4},"clima_escolar_2026":{"rel_professor_estudante":68.3,"rel_estudante_estudante":64.7,"seguranca_escolar":71.4,"justica_clareza_regras":70.2,"bullying_escolar":58.9,"engaj_cognitivo_comportamental":65.1,"engaj_emocional":62.4,"pertencimento_escolar":66.8,"mentalidade_crescimento":55.2},"saude_mental_2026_pct":{"ansiedade":38.4,"humor_deprimido":22.1,"autodepreciacao":19.4,"irritabilidade":35.7,"ideacao_suicida":12.3}},{"id":"EM02","nome":"E.M. Rui Barbosa","regiao":"Sul","qtd_alunos":280,"indicadores_externos":{"ideb_2025":3.1,"saeb_portugues_2025":198.7,"saeb_matematica_2025":201.3,"freq_media_2026":81.5,"pct_freq_baixa_2026":24.6,"apoias_por_100":7.8,"risco_abandono_por_100":5.2},"clima_escolar_2026":{"rel_professor_estudante":48.7,"rel_estudante_estudante":45.2,"seguranca_escolar":42.8,"justica_clareza_regras":47.1,"bullying_escolar":38.4,"engaj_cognitivo_comportamental":41.9,"engaj_emocional":43.7,"pertencimento_escolar":40.8,"mentalidade_crescimento":36.1},"saude_mental_2026_pct":{"ansiedade":54.2,"humor_deprimido":33.8,"autodepreciacao":28.4,"irritabilidade":47.3,"ideacao_suicida":21.5}},{"id":"EM03","nome":"E.M. Monteiro Lobato","regiao":"Leste","qtd_alunos":410,"indicadores_externos":{"ideb_2025":5.4,"saeb_portugues_2025":245.8,"saeb_matematica_2025":251.2,"freq_media_2026":93.7,"pct_freq_baixa_2026":5.4,"apoias_por_100":1.2,"risco_abandono_por_100":0.5},"clima_escolar_2026":{"rel_professor_estudante":78.4,"rel_estudante_estudante":74.1,"seguranca_escolar":81.5,"justica_clareza_regras":79.3,"bullying_escolar":67.8,"engaj_cognitivo_comportamental":75.2,"engaj_emocional":72.6,"pertencimento_escolar":76.9,"mentalidade_crescimento":68.4},"saude_mental_2026_pct":{"ansiedade":31.2,"humor_deprimido":18.5,"autodepreciacao":14.7,"irritabilidade":28.9,"ideacao_suicida":9.8}},{"id":"EM04","nome":"E.M. Carlos Drummond de Andrade","regiao":"Oeste","qtd_alunos":245,"indicadores_externos":{"ideb_2025":2.8,"saeb_portugues_2025":192.3,"saeb_matematica_2025":195.8,"freq_media_2026":78.4,"pct_freq_baixa_2026":31.2,"apoias_por_100":9.4,"risco_abandono_por_100":7.1},"clima_escolar_2026":{"rel_professor_estudante":41.5,"rel_estudante_estudante":38.9,"seguranca_escolar":36.2,"justica_clareza_regras":40.7,"bullying_escolar":32.1,"engaj_cognitivo_comportamental":38.4,"engaj_emocional":36.8,"pertencimento_escolar":35.4,"mentalidade_crescimento":31.2},"saude_mental_2026_pct":{"ansiedade":58.7,"humor_deprimido":38.4,"autodepreciacao":32.1,"irritabilidade":51.4,"ideacao_suicida":24.8}},{"id":"EM05","nome":"E.M. Machado de Assis","regiao":"Centro","qtd_alunos":360,"indicadores_externos":{"ideb_2025":4.7,"saeb_portugues_2025":231.4,"saeb_matematica_2025":235.7,"freq_media_2026":91.2,"pct_freq_baixa_2026":8.4,"apoias_por_100":2.5,"risco_abandono_por_100":1.1},"clima_escolar_2026":{"rel_professor_estudante":72.8,"rel_estudante_estudante":68.9,"seguranca_escolar":75.4,"justica_clareza_regras":73.7,"bullying_escolar":62.1,"engaj_cognitivo_comportamental":70.3,"engaj_emocional":67.8,"pertencimento_escolar":71.5,"mentalidade_crescimento":60.4},"saude_mental_2026_pct":{"ansiedade":35.8,"humor_deprimido":20.4,"autodepreciacao":16.9,"irritabilidade":32.7,"ideacao_suicida":11.2}},{"id":"EM06","nome":"E.M. Cecília Meireles","regiao":"Leste","qtd_alunos":295,"indicadores_externos":{"ideb_2025":5.9,"saeb_portugues_2025":252.1,"saeb_matematica_2025":258.4,"freq_media_2026":95.1,"pct_freq_baixa_2026":3.2,"apoias_por_100":0.8,"risco_abandono_por_100":0.3},"clima_escolar_2026":{"rel_professor_estudante":82.4,"rel_estudante_estudante":79.8,"seguranca_escolar":84.7,"justica_clareza_regras":82.3,"bullying_escolar":71.5,"engaj_cognitivo_comportamental":79.1,"engaj_emocional":77.4,"pertencimento_escolar":80.2,"mentalidade_crescimento":72.1},"saude_mental_2026_pct":{"ansiedade":28.7,"humor_deprimido":16.2,"autodepreciacao":12.8,"irritabilidade":25.4,"ideacao_suicida":8.4}},{"id":"EM07","nome":"E.M. Clarice Lispector","regiao":"Norte","qtd_alunos":310,"indicadores_externos":{"ideb_2025":3.5,"saeb_portugues_2025":207.9,"saeb_matematica_2025":211.4,"freq_media_2026":84.3,"pct_freq_baixa_2026":19.7,"apoias_por_100":5.8,"risco_abandono_por_100":3.4},"clima_escolar_2026":{"rel_professor_estudante":52.4,"rel_estudante_estudante":49.8,"seguranca_escolar":47.6,"justica_clareza_regras":51.3,"bullying_escolar":42.5,"engaj_cognitivo_comportamental":48.9,"engaj_emocional":46.7,"pertencimento_escolar":47.2,"mentalidade_crescimento":42.8},"saude_mental_2026_pct":{"ansiedade":52.4,"humor_deprimido":35.7,"autodepreciacao":29.8,"irritabilidade":46.2,"ideacao_suicida":22.9}},{"id":"EM08","nome":"E.M. Vinicius de Moraes","regiao":"Sul","qtd_alunos":340,"indicadores_externos":{"ideb_2025":4.0,"saeb_portugues_2025":221.5,"saeb_matematica_2025":224.8,"freq_media_2026":88.7,"pct_freq_baixa_2026":13.5,"apoias_por_100":3.9,"risco_abandono_por_100":1.8},"clima_escolar_2026":{"rel_professor_estudante":64.2,"rel_estudante_estudante":60.7,"seguranca_escolar":67.1,"justica_clareza_regras":65.8,"bullying_escolar":55.3,"engaj_cognitivo_comportamental":61.4,"engaj_emocional":58.9,"pertencimento_escolar":62.7,"mentalidade_crescimento":51.8},"saude_mental_2026_pct":{"ansiedade":41.3,"humor_deprimido":25.6,"autodepreciacao":21.7,"irritabilidade":38.4,"ideacao_suicida":14.6}},{"id":"EM09","nome":"E.M. Mario Quintana","regiao":"Oeste","qtd_alunos":215,"indicadores_externos":{"ideb_2025":2.5,"saeb_portugues_2025":188.4,"saeb_matematica_2025":191.2,"freq_media_2026":75.8,"pct_freq_baixa_2026":35.4,"apoias_por_100":11.2,"risco_abandono_por_100":8.7},"clima_escolar_2026":{"rel_professor_estudante":38.7,"rel_estudante_estudante":35.4,"seguranca_escolar":33.8,"justica_clareza_regras":37.9,"bullying_escolar":28.4,"engaj_cognitivo_comportamental":34.6,"engaj_emocional":33.2,"pertencimento_escolar":32.1,"mentalidade_crescimento":28.5},"saude_mental_2026_pct":{"ansiedade":62.1,"humor_deprimido":41.8,"autodepreciacao":35.4,"irritabilidade":54.7,"ideacao_suicida":27.3}},{"id":"EM10","nome":"E.M. Cora Coralina","regiao":"Centro","qtd_alunos":380,"indicadores_externos":{"ideb_2025":4.5,"saeb_portugues_2025":227.8,"saeb_matematica_2025":231.2,"freq_media_2026":90.4,"pct_freq_baixa_2026":9.7,"apoias_por_100":2.9,"risco_abandono_por_100":1.3},"clima_escolar_2026":{"rel_professor_estudante":70.1,"rel_estudante_estudante":66.4,"seguranca_escolar":72.8,"justica_clareza_regras":71.2,"bullying_escolar":60.3,"engaj_cognitivo_comportamental":67.9,"engaj_emocional":65.1,"pertencimento_escolar":68.7,"mentalidade_crescimento":58.9},"saude_mental_2026_pct":{"ansiedade":37.2,"humor_deprimido":21.8,"autodepreciacao":18.2,"irritabilidade":34.1,"ideacao_suicida":11.9}},{"id":"EM11","nome":"E.M. Grace Foster","regiao":"Norte","qtd_alunos":265,"indicadores_externos":{"ideb_2025":3.8,"saeb_portugues_2025":213.6,"saeb_matematica_2025":217.2,"freq_media_2026":85.9,"pct_freq_baixa_2026":17.3,"apoias_por_100":6.1,"risco_abandono_por_100":2.8},"clima_escolar_2026":{"rel_professor_estudante":55.7,"rel_estudante_estudante":52.4,"seguranca_escolar":49.8,"justica_clareza_regras":54.3,"bullying_escolar":35.8,"engaj_cognitivo_comportamental":51.6,"engaj_emocional":49.8,"pertencimento_escolar":50.4,"mentalidade_crescimento":45.7},"saude_mental_2026_pct":{"ansiedade":47.8,"humor_deprimido":29.4,"autodepreciacao":24.7,"irritabilidade":42.1,"ideacao_suicida":18.6}},{"id":"EM12","nome":"E.M. Carolina de Jesus","regiao":"Sul","qtd_alunos":230,"indicadores_externos":{"ideb_2025":3.2,"saeb_portugues_2025":201.8,"saeb_matematica_2025":204.5,"freq_media_2026":80.7,"pct_freq_baixa_2026":26.3,"apoias_por_100":8.2,"risco_abandono_por_100":6.1},"clima_escolar_2026":{"rel_professor_estudante":45.6,"rel_estudante_estudante":42.1,"seguranca_escolar":40.4,"justica_clareza_regras":44.8,"bullying_escolar":36.7,"engaj_cognitivo_comportamental":42.3,"engaj_emocional":41.5,"pertencimento_escolar":39.8,"mentalidade_crescimento":37.9},"saude_mental_2026_pct":{"ansiedade":56.3,"humor_deprimido":36.9,"autodepreciacao":30.8,"irritabilidade":49.5,"ideacao_suicida":23.6}}];
+    </script>
+    <script>
+// ============================================================================
+// TypeSafe PoC — Mini-app: Re-ranking de Escolas
+// Frontend JS puro (sem framework, sem build).
+// ============================================================================
+
+const $ = sel => document.querySelector(sel);
+const $$ = sel => Array.from(document.querySelectorAll(sel));
+
+const fmtPct = v => (v === null || v === undefined || isNaN(v))
+  ? '—'
+  : (v * 100).toFixed(2).replace('.', ',') + '%';
+
+const fmtPct1 = v => (v === null || v === undefined || isNaN(v))
+  ? '—'
+  : (v * 100).toFixed(1).replace('.', ',') + '%';
+
+const fmtNum1 = v => (v === null || v === undefined || isNaN(v))
+  ? '—'
+  : v.toFixed(2).replace('.', ',');
+
+// ---------------------------------------------------------------------------
+// Estado
+// ---------------------------------------------------------------------------
+let SCHOOLS = [];
+
+// ---------------------------------------------------------------------------
+// Init
+// ---------------------------------------------------------------------------
+async function init() {
+  // Inline schools data (no fetch needed)
+  SCHOOLS = window.SCHOOLS_DATA;
+  $('#schoolsCount').textContent = SCHOOLS.length;
+  renderSchoolsGrid(SCHOOLS);
+  $('#runBtn').disabled = false;
+
+  // Load worker URL from localStorage
+  const savedUrl = localStorage.getItem('typesafe_worker_url');
+  if (savedUrl) {
+    $('#workerUrl').value = savedUrl;
+  }
+
+  // Health check
+  checkWorkerHealth();
+
+  // Save worker URL on blur
+  $('#workerUrl').addEventListener('blur', () => {
+    const url = $('#workerUrl').value.trim();
+    if (url) {
+      localStorage.setItem('typesafe_worker_url', url);
+      checkWorkerHealth();
+    }
+  });
+  $('#testWorkerBtn').addEventListener('click', checkWorkerHealth);
+}
+
+// ---------------------------------------------------------------------------
+// Renderizar grid de escolas (input dataset)
+// ---------------------------------------------------------------------------
+function renderSchoolsGrid(schools) {
+  const html = schools.map(s => {
+    const io = s.indicadores_externos;
+    const cs = s.clima_escolar_2026;
+    const sm = s.saude_mental_2026_pct;
+    return `
+      <div class="school-card">
+        <h4>${s.nome} <span class="reg">${s.regiao} · ${s.qtd_alunos} al.</span></h4>
+        <div class="indicators">
+          <div class="ind"><span class="label">Ideb</span><span class="val">${io.ideb_2025}</span></div>
+          <div class="ind"><span class="label">SAEB P</span><span class="val">${io.saeb_portugues_2025}</span></div>
+          <div class="ind"><span class="label">SAEB M</span><span class="val">${io.saeb_matematica_2025}</span></div>
+          <div class="ind"><span class="label">Freq%</span><span class="val">${io.freq_media_2026}%</span></div>
+          <div class="ind"><span class="label">Baixa freq%</span><span class="val">${io.pct_freq_baixa_2026}%</span></div>
+          <div class="ind"><span class="label">APOIAs/100</span><span class="val">${io.apoias_por_100}</span></div>
+          <div class="ind"><span class="label">Risco aband.</span><span class="val">${io.risco_abandono_por_100}</span></div>
+          <div class="ind"><span class="label">Bullying</span><span class="val">${cs.bullying_escolar}</span></div>
+          <div class="ind"><span class="label">Segurança</span><span class="val">${cs.seguranca_escolar}</span></div>
+          <div class="ind"><span class="label">Engaj.</span><span class="val">${cs.engaj_cognitivo_comportamental}</span></div>
+          <div class="ind"><span class="label">Ansiedade</span><span class="val">${sm.ansiedade}%</span></div>
+          <div class="ind"><span class="label">Ideação</span><span class="val">${sm.ideacao_suicida}%</span></div>
+        </div>
+      </div>
+    `;
+  }).join('');
+  $('#schoolsGrid').innerHTML = html;
+}
+
+// ---------------------------------------------------------------------------
+// Chamar /api/rerank
+// ---------------------------------------------------------------------------
+async function runRerank() {
+  const query = $('#queryInput').value.trim();
+  if (!query) {
+    setStatus('warn', 'Digite uma consulta primeiro');
+    return;
+  }
+  if (!SCHOOLS.length) {
+    setStatus('err', 'Nenhuma escola carregada');
+    return;
+  }
+
+  const workerUrl = ($('#workerUrl').value || '').trim();
+  if (!workerUrl) {
+    setStatus('err', 'Configure a URL do Worker primeiro');
+    $('#workerUrl').focus();
+    return;
+  }
+
+  // Construct rerank URL
+  const rerankUrl = workerUrl.endsWith('/api/rerank')
+    ? workerUrl
+    : workerUrl.replace(/\/$/, '') + '/api/rerank';
+
+  // Loading
+  const btn = $('#runBtn');
+  btn.disabled = true;
+  const label = btn.querySelector('.btn-label');
+  const sp = btn.querySelector('.spinner');
+  label.textContent = 'Consultando...';
+  sp.style.display = 'inline-block';
+  setStatus('warn', 'Consultando TypeSafe via Worker...');
+
+  // Hide previous results
+  $('#resultSection').style.display = 'none';
+  $('#errorSection').style.display = 'none';
+
+  try {
+    const r = await fetch(rerankUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, schools: SCHOOLS }),
+    });
+    const data = await r.json();
+
+    if (!r.ok || !data.ok) {
+      showError(data);
+      setStatus('err', 'Erro: HTTP ' + r.status);
+      return;
+    }
+
+    renderResult(data);
+    setStatus('ok', 'OK · ' + data.elapsed_ms + 'ms · in=' + data.usage.input_tokens + 'tok out=' + data.usage.output_tokens + 'tok');
+  } catch (e) {
+    showError({ error: e.message, stack: e.stack });
+    setStatus('err', 'Falha de rede: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    label.textContent = 'Rankear';
+    sp.style.display = 'none';
+  }
+}
+
+async function checkWorkerHealth() {
+  const url = ($('#workerUrl').value || '').trim();
+  if (!url) {
+    setStatus('warn', 'Configure a URL do Worker');
+    return;
+  }
+  const healthUrl = url.endsWith('/health')
+    ? url
+    : url.replace(/\/$/, '') + '/health';
+  try {
+    const r = await fetch(healthUrl);
+    const data = await r.json();
+    if (data.ok && data.has_api_key) {
+      setStatus('ok', 'Worker conectado · ' + data.model + ' · API key OK');
+    } else if (data.ok && !data.has_api_key) {
+      setStatus('warn', 'Worker conectado, mas TYPESAFE_API_KEY não configurada');
+    } else {
+      setStatus('err', 'Worker retornou resposta inválida');
+    }
+  } catch (e) {
+    setStatus('err', 'Não foi possível alcançar o Worker: ' + e.message);
+  }
+}
+}
+
+
+// ---------------------------------------------------------------------------
+// Renderizar resultado
+// ---------------------------------------------------------------------------
+function renderResult(data) {
+  const sec = $('#resultSection');
+  sec.style.display = 'block';
+
+  // Meta
+  $('#resultMeta').innerHTML = `
+    Consulta: <b>${escapeHtml(data.query)}</b><br>
+    Modelo: <b>${data.model}</b> · Escolas: <b>${data.total_schools}</b> ·
+    Latência: <b>${data.elapsed_ms}ms</b> ·
+    Tokens: <b>${data.usage.input_tokens}</b> in / <b>${data.usage.output_tokens}</b> out
+  `;
+
+  // Aux cards: caso_critico (Noul), confianca (Score), gravidade (Score)
+  renderAuxCards(data);
+
+  // Ranking
+  renderRanking(data.ranking);
+
+  // Raw response
+  $('#rawResponse').textContent = JSON.stringify(data.raw_response, null, 2);
+
+  // Scroll to result
+  sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function renderAuxCards(data) {
+  const noul = data.caso_critico;     // {type:'noul', noul:0.xx}
+  const conf = data.confianca_diagnostico;
+  const grav = data.gravidade_top;
+
+  const noulVal = noul ? noul.noul : null;
+  const noulLabel = noulVal === null ? '—' : (noulVal > 0.7 ? 'Sim' : noulVal > 0.4 ? 'Incerto' : 'Não');
+  const noulColor = noulVal === null ? 'var(--muted)' : (noulVal > 0.7 ? 'var(--bad)' : noulVal > 0.4 ? 'var(--warn)' : 'var(--good)');
+
+  const confVal = conf ? conf.score : null;
+  const confLegend = conf ? conf.legend : null;
+  const confIdx = Math.round(confVal);
+  const confDesc = confLegend && confLegend[String(confIdx)] ? confLegend[String(confIdx)] : '—';
+
+  const gravVal = grav ? grav.score : null;
+  const gravLegend = grav ? grav.legend : null;
+  const gravIdx = Math.round(gravVal);
+  const gravDesc = gravLegend && gravLegend[String(gravIdx)] ? gravLegend[String(gravIdx)] : '—';
+  const gravColor = gravVal === null ? 'var(--muted)' : (gravVal >= 3 ? 'var(--bad)' : gravVal >= 2 ? 'var(--warn)' : 'var(--good)');
+
+  const html = `
+    <div class="aux-card noul">
+      <div class="aux-label">Caso crítico (Noul)</div>
+      <div class="aux-value" style="color: ${noulColor}">${noulLabel}</div>
+      <div class="aux-desc">P(caso crítico) = ${fmtPct(noulVal)}</div>
+      <div class="aux-bar"><div class="aux-bar-fill" style="width: ${(noulVal || 0) * 100}%"></div></div>
+    </div>
+    <div class="aux-card score">
+      <div class="aux-label">Confiança do diagnóstico (Score)</div>
+      <div class="aux-value">${fmtNum1(confVal)}<span style="font-size:14px;color:var(--muted)">/4</span></div>
+      <div class="aux-desc">${escapeHtml(confDesc)}</div>
+      <div class="aux-bar"><div class="aux-bar-fill" style="width: ${((confVal || 0) / 4) * 100}%"></div></div>
+    </div>
+    <div class="aux-card score">
+      <div class="aux-label">Gravidade do top-1 (Score)</div>
+      <div class="aux-value" style="color: ${gravColor}">${fmtNum1(gravVal)}<span style="font-size:14px;color:var(--muted)">/4</span></div>
+      <div class="aux-desc">${escapeHtml(gravDesc)}</div>
+      <div class="aux-bar"><div class="aux-bar-fill" style="width: ${((gravVal || 0) / 4) * 100}%; background: ${gravColor}"></div></div>
+    </div>
+  `;
+  $('#auxGrid').innerHTML = html;
+}
+
+function renderRanking(ranking) {
+  const maxP = ranking[0] ? ranking[0].probabilidade : 1;
+  const html = ranking.map(r => {
+    const pct = (r.probabilidade * 100);
+    const barWidth = maxP > 0 ? (r.probabilidade / maxP) * 100 : 0;
+    const topClass = r.rank <= 3 ? `top-${r.rank}` : '';
+    return `
+      <div class="rank-row ${topClass}">
+        <div class="rank-pos">${r.rank}</div>
+        <div class="rank-info">
+          <div class="name">${r.nome}</div>
+          <div class="meta">${r.regiao} · ${escapeHtml(r.id)}</div>
+        </div>
+        <div class="rank-prob">
+          <span class="pct">${fmtPct1(r.probabilidade)}</span>
+          <div class="bar"><div class="bar-fill" style="width: ${barWidth}%"></div></div>
+        </div>
+      </div>
+    `;
+  }).join('');
+  $('#rankingList').innerHTML = html;
+}
+
+// ---------------------------------------------------------------------------
+// Erro
+// ---------------------------------------------------------------------------
+function showError(data) {
+  $('#errorSection').style.display = 'block';
+  $('#errorBody').textContent = JSON.stringify(data, null, 2);
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+function setStatus(kind, msg) {
+  const el = $('#status');
+  const dotClass = kind === 'ok' ? 'ok' : kind === 'warn' ? 'warn' : 'err';
+  el.innerHTML = `<span class="dot ${dotClass}"></span> ${escapeHtml(msg)}`;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
+// ---------------------------------------------------------------------------
+// Boot
+// ---------------------------------------------------------------------------
+init();
+
+    </script>
+</body>
+</html>
